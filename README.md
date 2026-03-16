@@ -84,12 +84,14 @@ Learn how to use GCode Reconstructor in 4 easy steps:
 In the **"2. Parameters"** block, adjust the simulation fidelity:
 - **Nozzle Width (mm):** (e.g., 0.4). Used in screen previews and mathematical modeling calculations.
 - **Layer Height (mm):** (e.g., 0.2). Mainly used when creating extrusion height for 3D exporting.
-- **Nozzle simulation (3D/2D):** Checking this renders thick lines matching the physical extrusion area. Unchecking shows only the trajectory "skeleton".
 
-**Step 3: Line Filtering and Layer View**
+**Step 3: Line Filtering and Simulation Options**
 1. In the display block, use the slider or click the Z menu to transition through layers.
-2. The bottom-right filters let you toggle **Line Types**. 
-   - *Example:* To focus strictly on infill thickness, uncheck everything except `FILL (Infill)`.
+2. The bottom-right filters let you toggle **Line Types** and choose their specific simulation style:
+   - **Line:** Renders only the 1D trajectory "skeleton".
+   - **Square:** Renders a 2D rectangular expansion (flat caps) and robust 3D flat extrusions.
+   - **Tubular:** Renders a 2D round expansion and smooth 3D sweeping tubes.
+   - *Example:* To focus strictly on infill thickness, uncheck everything except `FILL (Infill)` and select `Square` or `Tubular`.
 3. Use the main window and zoom buttons to closely check line geometry.
 
 **Step 4: Exporting**
@@ -196,12 +198,14 @@ Aprenda a utilizar o GCode Reconstructor com 4 passos simples:
 No bloco **"2. Parâmetros"**, ajuste a fidelidade da simulação do seu arquivo:
 - **Largura do Bico (Nozzle Width):** Em milímetros (ex: 0.4). Usado tanto nas previsões em tela quanto nos cálculos matemáticos de modelagem.
 - **Altura da Camada (Layer Height):** Em milímetros (ex: 0.2). Usado sobretudo ao criar a altura da extrusão dos modelos na exportação 3D.
-- **Nozzle simulation (3D/2D):** Ao marcar esta opção, os gráficos renderizam linhas espessas condizentes com o tamanho físico da área de extrusão. Deixando desmarcado, a exibição será feita apenas do "esqueleto" e pontos de trajetória.
 
-**Passo 3: Filtro de Linhas e Visualização de Camada**
+**Passo 3: Filtro de Linhas e Simulação Visual**
 1. No bloco de exibição (Camada atual), use o controle deslizante (slider) ou clique diretamente no menu do Z (Z: xxx mm) para transitar pelas camadas.
-2. Na área inferior direita estão os filtros que permitem ativar / desativar os **Tipos de Linha**. 
-   - Exemplo de Uso: Caso queira focar a análise em como a espessura da estrutura interna vai se comportar, desmarque todas as caixas, exceto `FILL (Infill)`.
+2. Na área inferior direita estão os filtros que permitem ativar/desativar os **Tipos de Linha** e escolher seu estilo de simulação:
+   - **Linha:** Renderiza apenas o "esqueleto" e pontos de trajetória em 1D.
+   - **Quadrado:** Renderiza uma expansão 2D com cantos retos e uma extrusão plana no modelo 3D.
+   - **Tubular:** Renderiza um caminho 2D arredondado e tubos de varredura (sweeps) no modelo 3D.
+   - *Exemplo de Uso:* Caso queira focar a análise na espessura da estrutura interna, desmarque todas as caixas exceto `FILL (Infill)` e selecione `Quadrado` ou `Tubular`.
 3. A janela principal e os botões de zoom abaixo dela permitem que você se aproxime bastante para checar se as linhas estão colidindo ou formando a geometria certa.
 
 **Passo 4: Exportação**

@@ -15,7 +15,9 @@ TRANSLATIONS = {
         'params': '2. Parameters',
         'nozzle_w': 'Nozzle Width (mm):',
         'layer_h': 'Layer Height (mm):',
-        'tubular': 'Nozzle simulation (3D/2D)',
+        'sim_line': 'Line',
+        'sim_square': 'Square',
+        'sim_tubular': 'Tubular',
         'export_types': '3. Export/Preview Types:',
         'layer_nav': '4. Layer Navigation',
         'export_actions': '5. Export Actions',
@@ -46,7 +48,9 @@ TRANSLATIONS = {
         'params': '2. Parâmetros',
         'nozzle_w': 'Largura do Bico (mm):',
         'layer_h': 'Altura da Camada (mm):',
-        'tubular': 'Simulação de bico (3D/2D)',
+        'sim_line': 'Linha',
+        'sim_square': 'Quadrado',
+        'sim_tubular': 'Tubular',
         'export_types': '3. Propriedades para Exportar:',
         'layer_nav': '4. Navegação por Camadas',
         'export_actions': '5. Ações de Exportação',
@@ -83,6 +87,7 @@ class GCodeToDXFApp:
         self.layers = []
         self.available_types = set()
         self.type_vars = {} 
+        self.type_sim_vars = {}
         
         self._create_widgets()
         
@@ -142,10 +147,6 @@ class GCodeToDXFApp:
         self.lbl_layerh.grid(row=1, column=0, sticky=tk.W, pady=2)
         self.layer_height_var = tk.DoubleVar(value=0.4)
         ttk.Entry(param_frame, textvariable=self.layer_height_var, width=10).grid(row=1, column=1, pady=2)
-        
-        self.tubular_var = tk.BooleanVar(value=False)
-        self.chk_tubular = ttk.Checkbutton(param_frame, text=self.t('tubular'), variable=self.tubular_var, command=self.update_preview)
-        self.chk_tubular.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         
         # --- Type Selection ---
@@ -210,7 +211,6 @@ class GCodeToDXFApp:
         self.lbl_params.config(text=self.t('params'))
         self.lbl_nozzle.config(text=self.t('nozzle_w'))
         self.lbl_layerh.config(text=self.t('layer_h'))
-        self.chk_tubular.config(text=self.t('tubular'))
         self.lbl_export_types.config(text=self.t('export_types'))
         self.lbl_layer_nav.config(text=self.t('layer_nav'))
         self.lbl_export_acts.config(text=self.t('export_actions'))
@@ -278,16 +278,29 @@ class GCodeToDXFApp:
             widget.destroy()
             
         self.type_vars.clear()
+        self.type_sim_vars.clear()
         
         if not self.available_types:
             ttk.Label(self.types_frame, text="No types found").pack(anchor=tk.W)
             return
             
+        sim_options = [self.t('sim_line'), self.t('sim_square'), self.t('sim_tubular')]
+        sim_options_keys = ['line', 'square', 'tubular']
+
         for ptype in sorted(self.available_types):
+            row_frame = ttk.Frame(self.types_frame)
+            row_frame.pack(fill=tk.X, pady=2)
+            
             var = tk.BooleanVar(value=True)
             self.type_vars[ptype] = var
-            chk = ttk.Checkbutton(self.types_frame, text=self.t_type(ptype), variable=var, command=self.update_preview)
-            chk.pack(anchor=tk.W)
+            chk = ttk.Checkbutton(row_frame, text=self.t_type(ptype), variable=var, command=self.update_preview)
+            chk.pack(side=tk.LEFT)
+            
+            sim_var = tk.StringVar(value=sim_options[0])
+            self.type_sim_vars[ptype] = sim_var
+            cmb = ttk.Combobox(row_frame, textvariable=sim_var, values=sim_options, state="readonly", width=10)
+            cmb.pack(side=tk.RIGHT)
+            cmb.bind("<<ComboboxSelected>>", lambda e: self.update_preview())
 
     def on_layer_selected(self, event=None):
         idx = self.combo_layers.current()
@@ -316,7 +329,6 @@ class GCodeToDXFApp:
         colors = plt.get_cmap('tab10')
         color_idx = 0
         
-        is_tubular = self.tubular_var.get()
         try:
             nozzle_width = float(self.nozzle_var.get())
         except ValueError:
@@ -327,14 +339,23 @@ class GCodeToDXFApp:
                 has_data = True
                 c = colors(color_idx % 10)
                 
-                if is_tubular and nozzle_width > 0:
+                # Get the selected simulation type for this particular path type
+                opts_inv = {self.t('sim_line'): 'line', self.t('sim_square'): 'square', self.t('sim_tubular'): 'tubular'}
+                sim_type = opts_inv.get(self.type_sim_vars[path_type].get(), 'line')
+                
+                if sim_type in ['square', 'tubular'] and nozzle_width > 0:
                     from shapely.geometry import LineString, Polygon
-                    from shapely.ops import unary_union
+                    from shapely.ops import unary_union, linemerge
                     from matplotlib.patches import Polygon as MplPolygon
                     
+                    # 1 = Round (Tubular), 2 = Flat 
+                    buffer_cap_style = 1 if sim_type == 'tubular' else 2
+                    # 1 = Round, 3 = Bevel (cuts off spikes at sharp angles)
+                    buffer_join_style = 1 if sim_type == 'tubular' else 3
+                    
                     lines = [LineString([p1, p2]) for p1, p2 in segments]
-                    buffered_lines = [line.buffer(nozzle_width / 2.0, cap_style=1, join_style=1) for line in lines]
-                    layer_polygon = unary_union(buffered_lines)
+                    merged_lines = linemerge(lines)
+                    layer_polygon = merged_lines.buffer(nozzle_width / 2.0, cap_style=buffer_cap_style, join_style=buffer_join_style)
                     
                     polys = []
                     if isinstance(layer_polygon, Polygon):
@@ -383,7 +404,15 @@ class GCodeToDXFApp:
         self.canvas.draw()
         
     def get_selected_types(self):
-        return [t for t, var in self.type_vars.items() if var.get()]
+        selected = {}
+        # Reverse map translation to key
+        opts_inv = {self.t('sim_line'): 'line', self.t('sim_square'): 'square', self.t('sim_tubular'): 'tubular'}
+        
+        for root_type, var in self.type_vars.items():
+            if var.get():
+                sim_str = self.type_sim_vars[root_type].get()
+                selected[root_type] = opts_inv.get(sim_str, 'line')
+        return selected
 
     def export_dxf(self):
         idx = self.combo_layers.current()
@@ -405,7 +434,7 @@ class GCodeToDXFApp:
         if not filepath: return
         
         self.progress_bar['value'] = 0
-        success, res = export_layer_to_dxf(layer, filepath, include_types=selected_types, nozzle_width=self.nozzle_var.get(), tubular=self.tubular_var.get())
+        success, res = export_layer_to_dxf(layer, filepath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get())
         self.progress_bar['value'] = 100
         
         if success:
@@ -424,7 +453,7 @@ class GCodeToDXFApp:
             
         try:
             self.progress_bar['value'] = 0
-            export_all_layers_to_folder(self.layers, folderpath, include_types=selected_types, nozzle_width=self.nozzle_var.get(), tubular=self.tubular_var.get(), progress_callback=self.update_progress)
+            export_all_layers_to_folder(self.layers, folderpath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get(), progress_callback=self.update_progress)
             messagebox.showinfo("Success", f"{self.t('msg_success')}{folderpath}")
         except Exception as e:
             messagebox.showerror("Export Failed", f"{self.t('msg_error')}{str(e)}")
@@ -450,7 +479,6 @@ class GCodeToDXFApp:
         success, res = export_3d_model(
             self.layers, filepath, selected_types, 
             self.nozzle_var.get(), self.layer_height_var.get(), 
-            tubular=self.tubular_var.get(),
             progress_callback=self.update_progress
         )
         self.progress_bar['value'] = 0

@@ -4,10 +4,13 @@ from shapely.ops import unary_union, linemerge
 import numpy as np
 import math
 
-def generate_3d_mesh(layers, include_types, nozzle_width, fallback_layer_height=0.4, tubular=False, progress_callback=None):
+def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_height=0.4, progress_callback=None):
     """
     Generates a single 3D trimesh object from GCode layers.
     """
+    if simulation_types is None:
+        simulation_types = {}
+        
     # Half width for the buffer
     radius = nozzle_width / 2.0
     
@@ -25,67 +28,58 @@ def generate_3d_mesh(layers, include_types, nozzle_width, fallback_layer_height=
         if z_base < 0:
             z_base = 0.0
             
-        lines = []
+        lines_by_style = {'line': [], 'square': [], 'tubular': []}
         for path_type, segments in layer.segments_by_type.items():
-            if include_types is not None and path_type not in include_types:
+            if path_type not in simulation_types:
                 continue
+            sim_type = simulation_types.get(path_type, 'line')
+            if sim_type not in lines_by_style:
+                sim_type = 'line'
             for p1, p2 in segments:
-                lines.append((p1, p2))
+                lines_by_style[sim_type].append((p1, p2))
                 
-        if not lines:
-            continue
-            
-        if tubular:
-            # Generate continuous tubular sweeps
-            # First, convert line segments to LineStrings
-            shapely_lines = [LineString([p1, p2]) for p1, p2 in lines]
-            # Merge into continuous paths
+        # Tubular processing
+        if lines_by_style['tubular']:
+            shapely_lines = [LineString([p1, p2]) for p1, p2 in lines_by_style['tubular']]
             merged = linemerge(shapely_lines)
             lines2d = [merged] if type(merged) == LineString else list(merged.geoms)
             
-            # Create the 2D elliptical profile
             profile = trimesh.path.creation.circle(radius=radius)
             transform = np.eye(3)
-            # Squash the circle vertically to match layer_thickness
-            scale_z = layer_thickness / nozzle_width
+            scale_z = layer_thickness / nozzle_width if nozzle_width > 0 else 1.0
             transform[1, 1] = scale_z
             profile.apply_transform(transform)
             poly_profile = profile.polygons_full[0]
             
-            # Sweep along each path
             z_center = z_base + layer_thickness / 2.0
             for ls in lines2d:
                 pts = np.array(ls.coords)
-                # Convert 2D coords to 3D coords
                 pts3d = np.zeros((len(pts), 3))
                 pts3d[:, 0] = pts[:, 0]
                 pts3d[:, 1] = pts[:, 1]
-                # sweep_polygon builds around the path.
                 try:
                     tube_mesh = trimesh.creation.sweep_polygon(poly_profile, pts3d)
                     tube_mesh.apply_translation((0, 0, z_center))
                     all_meshes.append(tube_mesh)
                 except Exception as e:
                     print(f"Skipping tube sweep due to error: {e}")
-        else:
-            # Standard flat extrusion logic using shapely polygons
-            shapely_lines = [LineString([p1, p2]) for p1, p2 in lines]
-            buffered_lines = [line.buffer(radius, cap_style=1, join_style=1) for line in shapely_lines]
-    
-            # Union all polygons in this layer to avoid internal self-intersections
-            layer_polygon = unary_union(buffered_lines)
+                    
+        # Square and Line processing (In 3D, 'line' acts mostly like 'square')
+        flat_lines = lines_by_style['square'] + lines_by_style['line']
+        if flat_lines:
+            shapely_lines = [LineString([p1, p2]) for p1, p2 in flat_lines]
+            merged_lines = linemerge(shapely_lines)
+            layer_polygon = merged_lines.buffer(radius, cap_style=2, join_style=3)
             
             polys_to_extrude = []
             if type(layer_polygon) == Polygon:
                 polys_to_extrude.append(layer_polygon)
-            else: # MultiPolygon
+            else:
                 polys_to_extrude.extend(list(layer_polygon.geoms))
                 
             for poly in polys_to_extrude:
-                # Extrude 2D polygon to 3D mesh
                 try:
                     mesh = trimesh.creation.extrude_polygon(poly, height=layer_thickness)
-                    # Translate it to the correct Z height
                     mesh.apply_translation((0, 0, z_base))
                     all_meshes.append(mesh)
                 except Exception as e:
@@ -102,10 +96,12 @@ def generate_3d_mesh(layers, include_types, nozzle_width, fallback_layer_height=
     final_mesh = trimesh.util.concatenate(all_meshes)
     return final_mesh
 
-def export_3d_model(layers, output_path, include_types=None, nozzle_width=0.4, layer_height=0.4, tubular=False, progress_callback=None):
+def export_3d_model(layers, output_path, simulation_types=None, nozzle_width=0.4, layer_height=0.4, progress_callback=None):
     """
     Exports layers to a 3D file (STL/OBJ/STEP).
     """
+    if simulation_types is None:
+        simulation_types = {}
     try:
         is_step = output_path.lower().endswith('.step') or output_path.lower().endswith('.stp')
         
@@ -125,16 +121,18 @@ def export_3d_model(layers, output_path, include_types=None, nozzle_width=0.4, l
                 layer_thickness = layer_height
                 lines = []
                 for path_type, segments in layer.segments_by_type.items():
-                    if include_types is not None and path_type not in include_types:
+                    if path_type not in simulation_types:
                         continue
+                    
+                    # For STEP, we treat everything as flat extruded paths for simplicity right now
                     for p1, p2 in segments:
                         lines.append(LineString([p1, p2]))
                         
                 if not lines:
                     continue
                     
-                buffered_lines = [line.buffer(radius, cap_style=1, join_style=1) for line in lines]
-                layer_polygon = unary_union(buffered_lines)
+                merged_lines = linemerge(lines)
+                layer_polygon = merged_lines.buffer(radius, cap_style=2, join_style=3)
                 
                 z_base = (layer.z_height - min_z)
                 if z_base < 0:
@@ -178,7 +176,7 @@ def export_3d_model(layers, output_path, include_types=None, nozzle_width=0.4, l
             
         else:
             # STL/OBJ fallback using trimesh (faster for meshes)
-            mesh = generate_3d_mesh(layers, include_types, nozzle_width, layer_height, tubular=tubular, progress_callback=progress_callback)
+            mesh = generate_3d_mesh(layers, simulation_types, nozzle_width, layer_height, progress_callback=progress_callback)
             if mesh is None:
                 return False, "No geometry generated (maybe no segments matched the types)."
                 
