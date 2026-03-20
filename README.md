@@ -51,7 +51,7 @@ If you want to modify the code, contribute, or test on another OS (Linux/macOS):
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/SeuUsuario/GCode-Reconstructor.git
+git clone https://github.com/xToshiro/GCode-Reconstructor.git
 cd GCode-Reconstructor
 ```
 
@@ -165,7 +165,7 @@ Caso queira modificar o código, contribuir ou testar em outro sistema operacion
 
 **1. Clonar o repositório**
 ```bash
-git clone https://github.com/SeuUsuario/GCode-Reconstructor.git
+git clone https://github.com/xToshiro/GCode-Reconstructor.git
 cd GCode-Reconstructor
 ```
 
