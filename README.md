@@ -19,6 +19,12 @@ This project is **extremely useful when you want to study the internal infill st
   - `WALL-INNER`
   - `SKIRT / BRIM`
   - `SUPPORT`
+- **Flexible Simulation Styles:** Choose how path widths are modeled:
+  - `Line`: 1D trajectory skeletons.
+  - `Square`: Sharp rectangular extrusions.
+  - `Tubular`: Curved elliptical sweep models.
+  - `Stadium` (New): Realistic flat top/bottom and round-sided compressed bead extrusions.
+- **Resolution Control (New):** Adjustable segmentation resolution to output high-fidelity or lightweight (low-polygon) meshes.
 - **DXF (2D) Export:**
   - Export only the currently selected layer to a vector file.
   - Export all layers simultaneously to a chosen folder (generates a distinct `.dxf` file for each Z height).
@@ -35,6 +41,7 @@ The software was developed in Python and requires standard Python libraries (`tk
 - `trimesh`
 - `numpy`
 - `ezdxf`
+- `mapbox-earcut`
 
 ### 🚀 Installation & Execution
 
@@ -61,7 +68,7 @@ cd GCode-Reconstructor
 
 **3. Install dependencies**
 ```bash
-pip install matplotlib shapely trimesh numpy ezdxf
+pip install matplotlib shapely trimesh numpy ezdxf mapbox-earcut
 ```
 
 **4. Run the program**
@@ -84,6 +91,7 @@ Learn how to use GCode Reconstructor in 4 easy steps:
 In the **"2. Parameters"** block, adjust the simulation fidelity:
 - **Nozzle Width (mm):** (e.g., 0.4). Used in screen previews and mathematical modeling calculations.
 - **Layer Height (mm):** (e.g., 0.2). Mainly used when creating extrusion height for 3D exporting.
+- **Resolution (Segs):** (e.g., 8). Controls the polygon count and curve subdivision of the 2D buffers and 3D mesh files.
 
 **Step 3: Line Filtering and Simulation Options**
 1. In the display block, use the slider or click the Z menu to transition through layers.
@@ -91,7 +99,8 @@ In the **"2. Parameters"** block, adjust the simulation fidelity:
    - **Line:** Renders only the 1D trajectory "skeleton".
    - **Square:** Renders a 2D rectangular expansion (flat caps) and robust 3D flat extrusions.
    - **Tubular:** Renders a 2D round expansion and smooth 3D sweeping tubes.
-   - *Example:* To focus strictly on infill thickness, uncheck everything except `FILL (Infill)` and select `Square` or `Tubular`.
+   - **Stadium:** Renders a 2D round expansion and smooth 3D sweeps with flat top/bottom surfaces.
+   - *Example:* To focus strictly on infill thickness, uncheck everything except `FILL (Infill)` and select `Square`, `Tubular`, or `Stadium`.
 3. Use the main window and zoom buttons to closely check line geometry.
 
 **Step 4: Exporting**
@@ -127,6 +136,12 @@ Este projeto é **extremamente útil para casos em que se deseja estudar a estru
   - `Parede Interna (Wall-Inner)`
   - `Saia e Borda (Skirt / Brim)`
   - `Suporte (Support)`
+- **Estilos de Simulação Flexíveis:** Escolha como as larguras das trajetórias são modeladas:
+  - `Linha`: Esqueleto da trajetória em 1D.
+  - `Quadrado`: Extrusões retangulares planas com cantos retos.
+  - `Tubular`: Modelos de varredura elípticos arredondados.
+  - `Estádio` (Novo): Extrusões realistas com topo/base planos e laterais arredondadas.
+- **Controle de Resolução (Novo):** Resolução de segmentação ajustável para obter malhas de alta definição ou leves (baixo número de polígonos).
 - **Exportação para DXF (2D):**
   - Exporte apenas a camada atual selecionada para um arquivo vetorial.
   - Exporte todas as camadas simultaneamente para uma pasta escolhida (gera um arquivo `.dxf` distinto para cada altura Z).
@@ -145,6 +160,7 @@ Certifique-se de ter o Python (versão 3.8 ou superior) instalado em seu sistema
 - `trimesh`
 - `numpy`
 - `ezdxf`
+- `mapbox-earcut` (necessário para triangulação de polígonos nas varreduras e extrusões 3D)
 
 *(O projeto também usa bibliotecas padrão do Python como `tkinter`, `os` e `re`).*
 
@@ -175,7 +191,7 @@ cd GCode-Reconstructor
 
 **3. Instalar as dependências**
 ```bash
-pip install matplotlib shapely trimesh numpy ezdxf
+pip install matplotlib shapely trimesh numpy ezdxf mapbox-earcut
 ```
 
 **4. Executar o programa**
@@ -198,6 +214,7 @@ Aprenda a utilizar o GCode Reconstructor com 4 passos simples:
 No bloco **"2. Parâmetros"**, ajuste a fidelidade da simulação do seu arquivo:
 - **Largura do Bico (Nozzle Width):** Em milímetros (ex: 0.4). Usado tanto nas previsões em tela quanto nos cálculos matemáticos de modelagem.
 - **Altura da Camada (Layer Height):** Em milímetros (ex: 0.2). Usado sobretudo ao criar a altura da extrusão dos modelos na exportação 3D.
+- **Resolução (Segs):** (ex: 8). Controla o número de subdivisões e densidade poligonal da malha 3D e curvas 2D.
 
 **Passo 3: Filtro de Linhas e Simulação Visual**
 1. No bloco de exibição (Camada atual), use o controle deslizante (slider) ou clique diretamente no menu do Z (Z: xxx mm) para transitar pelas camadas.
@@ -205,7 +222,8 @@ No bloco **"2. Parâmetros"**, ajuste a fidelidade da simulação do seu arquivo
    - **Linha:** Renderiza apenas o "esqueleto" e pontos de trajetória em 1D.
    - **Quadrado:** Renderiza uma expansão 2D com cantos retos e uma extrusão plana no modelo 3D.
    - **Tubular:** Renderiza um caminho 2D arredondado e tubos de varredura (sweeps) no modelo 3D.
-   - *Exemplo de Uso:* Caso queira focar a análise na espessura da estrutura interna, desmarque todas as caixas exceto `FILL (Infill)` e selecione `Quadrado` ou `Tubular`.
+   - **Estádio:** Renderiza uma extrusão com topo/base planos e laterais arredondadas (como na simulação real).
+   - *Exemplo de Uso:* Caso queira focar a análise na espessura da estrutura interna, desmarque todas as caixas exceto `FILL (Infill)` e selecione `Quadrado`, `Tubular` ou `Estádio`.
 3. A janela principal e os botões de zoom abaixo dela permitem que você se aproxime bastante para checar se as linhas estão colidindo ou formando a geometria certa.
 
 **Passo 4: Exportação**

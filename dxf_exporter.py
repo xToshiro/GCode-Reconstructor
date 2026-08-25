@@ -4,14 +4,15 @@ import os
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union, linemerge
 
-def export_layer_to_dxf(gcode_layer, output_path, simulation_types=None, nozzle_width=0.0):
+def export_layer_to_dxf(gcode_layer, output_path, simulation_types=None, nozzle_width=0.0, resolution=8):
     """
     Exports a single GCodeLayer object to a DXF file.
     
     :param gcode_layer: GCodeLayer instance
     :param output_path: str, destination path for the .dxf file
-    :param simulation_types: dict mapping segment types to their simulation style ('line', 'square', 'tubular')
+    :param simulation_types: dict mapping segment types to their simulation style ('line', 'square', 'tubular', 'stadium')
     :param nozzle_width: float. If > 0, lines will be drawn as LWPOLYLINE with this width.
+    :param resolution: int, segments per quadrant for the round buffer
     """
     if simulation_types is None:
         simulation_types = {}
@@ -28,10 +29,10 @@ def export_layer_to_dxf(gcode_layer, output_path, simulation_types=None, nozzle_
         'SUPPORT': 5,    # Blue
         'UNKNOWN': 7     # White/Black
     }
-
+ 
     created_dxf_layers = set()
     exported_count = 0
-
+ 
     for path_type, segments in gcode_layer.segments_by_type.items():
         if path_type not in simulation_types:
             continue
@@ -45,14 +46,14 @@ def export_layer_to_dxf(gcode_layer, output_path, simulation_types=None, nozzle_
             
         sim_type = simulation_types.get(path_type, 'line')
             
-        if sim_type in ['square', 'tubular'] and nozzle_width > 0:
-            buffer_cap_style = 1 if sim_type == 'tubular' else 2
-            buffer_join_style = 1 if sim_type == 'tubular' else 3
+        if sim_type in ['square', 'tubular', 'stadium'] and nozzle_width > 0:
+            buffer_cap_style = 1 if sim_type in ['tubular', 'stadium'] else 2
+            buffer_join_style = 1 if sim_type in ['tubular', 'stadium'] else 3
             
             # Draw outlined footprint polylines
             lines = [LineString([p1, p2]) for p1, p2 in segments]
             merged_lines = linemerge(lines)
-            layer_polygon = merged_lines.buffer(nozzle_width / 2.0, cap_style=buffer_cap_style, join_style=buffer_join_style)
+            layer_polygon = merged_lines.buffer(nozzle_width / 2.0, cap_style=buffer_cap_style, join_style=buffer_join_style, quad_segs=resolution)
             
             polys = []
             if isinstance(layer_polygon, Polygon):
@@ -87,8 +88,8 @@ def export_layer_to_dxf(gcode_layer, output_path, simulation_types=None, nozzle_
         return True, exported_count
     except Exception as e:
         return False, str(e)
-
-def export_all_layers_to_folder(layers, output_folder, simulation_types=None, nozzle_width=0.0, progress_callback=None):
+ 
+def export_all_layers_to_folder(layers, output_folder, simulation_types=None, nozzle_width=0.0, resolution=8, progress_callback=None):
     """
     Exports all layers to individual DXF files inside the given folder.
     """
@@ -102,7 +103,7 @@ def export_all_layers_to_folder(layers, output_folder, simulation_types=None, no
         filename = f"Layer_{layer.index:03d}_Z{z_str}.dxf"
         out_path = os.path.join(output_folder, filename)
         
-        export_layer_to_dxf(layer, out_path, simulation_types, nozzle_width)
+        export_layer_to_dxf(layer, out_path, simulation_types, nozzle_width, resolution)
         
     if progress_callback:
         progress_callback(len(layers), len(layers))

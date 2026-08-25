@@ -4,7 +4,44 @@ from shapely.ops import unary_union, linemerge
 import numpy as np
 import math
 
-def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_height=0.4, progress_callback=None):
+def create_ellipse_profile(w, h, resolution=8):
+    """
+    Creates an elliptical profile centered at (0,0) with width w and height h.
+    resolution controls the number of segments per quadrant. Total vertices = 4 * resolution.
+    """
+    angles = np.linspace(0, 2 * np.pi, 4 * resolution, endpoint=False)
+    x = (w / 2.0) * np.cos(angles)
+    y = (h / 2.0) * np.sin(angles)
+    return Polygon(np.column_stack((x, y)))
+
+def create_stadium_profile(w, h, resolution=8):
+    """
+    Creates a stadium profile centered at (0,0) with total width w and total height h.
+    The top and bottom are flat lines. The left and right ends are semicircles of radius h/2.
+    resolution controls the number of segments in each semicircular end.
+    Total vertices = 4 * resolution.
+    """
+    if w <= h:
+        return create_ellipse_profile(w, h, resolution)
+        
+    r = h / 2.0
+    d = w / 2.0 - r
+    
+    # Right semicircle (from -pi/2 to pi/2)
+    theta_right = np.linspace(-np.pi/2, np.pi/2, 2 * resolution)
+    x_right = d + r * np.cos(theta_right)
+    y_right = r * np.sin(theta_right)
+    
+    # Left semicircle (from pi/2 to 3*pi/2)
+    theta_left = np.linspace(np.pi/2, 1.5 * np.pi, 2 * resolution)
+    x_left = -d + r * np.cos(theta_left)
+    y_left = r * np.sin(theta_left)
+    
+    x = np.concatenate([x_right, x_left])
+    y = np.concatenate([y_right, y_left])
+    return Polygon(np.column_stack((x, y)))
+
+def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_height=0.4, resolution=8, progress_callback=None):
     """
     Generates a single 3D trimesh object from GCode layers.
     """
@@ -28,7 +65,7 @@ def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_heig
         if z_base < 0:
             z_base = 0.0
             
-        lines_by_style = {'line': [], 'square': [], 'tubular': []}
+        lines_by_style = {'line': [], 'square': [], 'tubular': [], 'stadium': []}
         for path_type, segments in layer.segments_by_type.items():
             if path_type not in simulation_types:
                 continue
@@ -44,13 +81,7 @@ def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_heig
             merged = linemerge(shapely_lines)
             lines2d = [merged] if type(merged) == LineString else list(merged.geoms)
             
-            profile = trimesh.path.creation.circle(radius=radius)
-            transform = np.eye(3)
-            scale_z = layer_thickness / nozzle_width if nozzle_width > 0 else 1.0
-            transform[1, 1] = scale_z
-            profile.apply_transform(transform)
-            poly_profile = profile.polygons_full[0]
-            
+            poly_profile = create_ellipse_profile(nozzle_width, layer_thickness, resolution)
             z_center = z_base + layer_thickness / 2.0
             for ls in lines2d:
                 pts = np.array(ls.coords)
@@ -63,6 +94,26 @@ def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_heig
                     all_meshes.append(tube_mesh)
                 except Exception as e:
                     print(f"Skipping tube sweep due to error: {e}")
+
+        # Stadium processing
+        if lines_by_style['stadium']:
+            shapely_lines = [LineString([p1, p2]) for p1, p2 in lines_by_style['stadium']]
+            merged = linemerge(shapely_lines)
+            lines2d = [merged] if type(merged) == LineString else list(merged.geoms)
+            
+            poly_profile = create_stadium_profile(nozzle_width, layer_thickness, resolution)
+            z_center = z_base + layer_thickness / 2.0
+            for ls in lines2d:
+                pts = np.array(ls.coords)
+                pts3d = np.zeros((len(pts), 3))
+                pts3d[:, 0] = pts[:, 0]
+                pts3d[:, 1] = pts[:, 1]
+                try:
+                    tube_mesh = trimesh.creation.sweep_polygon(poly_profile, pts3d)
+                    tube_mesh.apply_translation((0, 0, z_center))
+                    all_meshes.append(tube_mesh)
+                except Exception as e:
+                    print(f"Skipping stadium sweep due to error: {e}")
                     
         # Square and Line processing (In 3D, 'line' acts mostly like 'square')
         flat_lines = lines_by_style['square'] + lines_by_style['line']
@@ -96,7 +147,7 @@ def generate_3d_mesh(layers, simulation_types, nozzle_width, fallback_layer_heig
     final_mesh = trimesh.util.concatenate(all_meshes)
     return final_mesh
 
-def export_3d_model(layers, output_path, simulation_types=None, nozzle_width=0.4, layer_height=0.4, progress_callback=None):
+def export_3d_model(layers, output_path, simulation_types=None, nozzle_width=0.4, layer_height=0.4, resolution=8, progress_callback=None):
     """
     Exports layers to a 3D file (STL/OBJ/STEP).
     """
@@ -176,7 +227,7 @@ def export_3d_model(layers, output_path, simulation_types=None, nozzle_width=0.4
             
         else:
             # STL/OBJ fallback using trimesh (faster for meshes)
-            mesh = generate_3d_mesh(layers, simulation_types, nozzle_width, layer_height, progress_callback=progress_callback)
+            mesh = generate_3d_mesh(layers, simulation_types, nozzle_width, layer_height, resolution=resolution, progress_callback=progress_callback)
             if mesh is None:
                 return False, "No geometry generated (maybe no segments matched the types)."
                 

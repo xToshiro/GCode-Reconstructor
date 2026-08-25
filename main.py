@@ -18,6 +18,8 @@ TRANSLATIONS = {
         'sim_line': 'Line',
         'sim_square': 'Square',
         'sim_tubular': 'Tubular',
+        'sim_stadium': 'Stadium',
+        'resolution': 'Resolution (Segs):',
         'export_types': '3. Export/Preview Types:',
         'layer_nav': '4. Layer Navigation',
         'export_actions': '5. Export Actions',
@@ -51,6 +53,8 @@ TRANSLATIONS = {
         'sim_line': 'Linha',
         'sim_square': 'Quadrado',
         'sim_tubular': 'Tubular',
+        'sim_stadium': 'Estádio',
+        'resolution': 'Resolução (Segs):',
         'export_types': '3. Propriedades para Exportar:',
         'layer_nav': '4. Navegação por Camadas',
         'export_actions': '5. Ações de Exportação',
@@ -147,6 +151,11 @@ class GCodeToDXFApp:
         self.lbl_layerh.grid(row=1, column=0, sticky=tk.W, pady=2)
         self.layer_height_var = tk.DoubleVar(value=0.4)
         ttk.Entry(param_frame, textvariable=self.layer_height_var, width=10).grid(row=1, column=1, pady=2)
+        
+        self.lbl_resolution = ttk.Label(param_frame, text=self.t('resolution'))
+        self.lbl_resolution.grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.resolution_var = tk.IntVar(value=8)
+        ttk.Entry(param_frame, textvariable=self.resolution_var, width=10).grid(row=2, column=1, pady=2)
 
         
         # --- Type Selection ---
@@ -211,6 +220,7 @@ class GCodeToDXFApp:
         self.lbl_params.config(text=self.t('params'))
         self.lbl_nozzle.config(text=self.t('nozzle_w'))
         self.lbl_layerh.config(text=self.t('layer_h'))
+        self.lbl_resolution.config(text=self.t('resolution'))
         self.lbl_export_types.config(text=self.t('export_types'))
         self.lbl_layer_nav.config(text=self.t('layer_nav'))
         self.lbl_export_acts.config(text=self.t('export_actions'))
@@ -284,8 +294,8 @@ class GCodeToDXFApp:
             ttk.Label(self.types_frame, text="No types found").pack(anchor=tk.W)
             return
             
-        sim_options = [self.t('sim_line'), self.t('sim_square'), self.t('sim_tubular')]
-        sim_options_keys = ['line', 'square', 'tubular']
+        sim_options = [self.t('sim_line'), self.t('sim_square'), self.t('sim_tubular'), self.t('sim_stadium')]
+        sim_options_keys = ['line', 'square', 'tubular', 'stadium']
 
         for ptype in sorted(self.available_types):
             row_frame = ttk.Frame(self.types_frame)
@@ -340,22 +350,32 @@ class GCodeToDXFApp:
                 c = colors(color_idx % 10)
                 
                 # Get the selected simulation type for this particular path type
-                opts_inv = {self.t('sim_line'): 'line', self.t('sim_square'): 'square', self.t('sim_tubular'): 'tubular'}
+                opts_inv = {
+                    self.t('sim_line'): 'line', 
+                    self.t('sim_square'): 'square', 
+                    self.t('sim_tubular'): 'tubular',
+                    self.t('sim_stadium'): 'stadium'
+                }
                 sim_type = opts_inv.get(self.type_sim_vars[path_type].get(), 'line')
                 
-                if sim_type in ['square', 'tubular'] and nozzle_width > 0:
+                if sim_type in ['square', 'tubular', 'stadium'] and nozzle_width > 0:
                     from shapely.geometry import LineString, Polygon
                     from shapely.ops import unary_union, linemerge
                     from matplotlib.patches import Polygon as MplPolygon
                     
-                    # 1 = Round (Tubular), 2 = Flat 
-                    buffer_cap_style = 1 if sim_type == 'tubular' else 2
+                    # 1 = Round (Tubular/Stadium), 2 = Flat 
+                    buffer_cap_style = 1 if sim_type in ['tubular', 'stadium'] else 2
                     # 1 = Round, 3 = Bevel (cuts off spikes at sharp angles)
-                    buffer_join_style = 1 if sim_type == 'tubular' else 3
+                    buffer_join_style = 1 if sim_type in ['tubular', 'stadium'] else 3
+                    
+                    try:
+                        resolution = int(self.resolution_var.get())
+                    except ValueError:
+                        resolution = 8
                     
                     lines = [LineString([p1, p2]) for p1, p2 in segments]
                     merged_lines = linemerge(lines)
-                    layer_polygon = merged_lines.buffer(nozzle_width / 2.0, cap_style=buffer_cap_style, join_style=buffer_join_style)
+                    layer_polygon = merged_lines.buffer(nozzle_width / 2.0, cap_style=buffer_cap_style, join_style=buffer_join_style, quad_segs=resolution)
                     
                     polys = []
                     if isinstance(layer_polygon, Polygon):
@@ -406,7 +426,12 @@ class GCodeToDXFApp:
     def get_selected_types(self):
         selected = {}
         # Reverse map translation to key
-        opts_inv = {self.t('sim_line'): 'line', self.t('sim_square'): 'square', self.t('sim_tubular'): 'tubular'}
+        opts_inv = {
+            self.t('sim_line'): 'line', 
+            self.t('sim_square'): 'square', 
+            self.t('sim_tubular'): 'tubular',
+            self.t('sim_stadium'): 'stadium'
+        }
         
         for root_type, var in self.type_vars.items():
             if var.get():
@@ -433,15 +458,19 @@ class GCodeToDXFApp:
         )
         if not filepath: return
         
+        try:
+            resolution = int(self.resolution_var.get())
+        except ValueError:
+            resolution = 8
         self.progress_bar['value'] = 0
-        success, res = export_layer_to_dxf(layer, filepath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get())
+        success, res = export_layer_to_dxf(layer, filepath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get(), resolution=resolution)
         self.progress_bar['value'] = 100
         
         if success:
             messagebox.showinfo("Success", f"{self.t('msg_success')}{filepath}")
         else:
             messagebox.showerror("Export Failed", f"{self.t('msg_error')}{res}")
-
+ 
     def export_all_dxf(self):
         selected_types = self.get_selected_types()
         if not selected_types:
@@ -452,14 +481,18 @@ class GCodeToDXFApp:
         if not folderpath: return
             
         try:
+            resolution = int(self.resolution_var.get())
+        except ValueError:
+            resolution = 8
+        try:
             self.progress_bar['value'] = 0
-            export_all_layers_to_folder(self.layers, folderpath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get(), progress_callback=self.update_progress)
+            export_all_layers_to_folder(self.layers, folderpath, simulation_types=selected_types, nozzle_width=self.nozzle_var.get(), resolution=resolution, progress_callback=self.update_progress)
             messagebox.showinfo("Success", f"{self.t('msg_success')}{folderpath}")
         except Exception as e:
             messagebox.showerror("Export Failed", f"{self.t('msg_error')}{str(e)}")
         finally:
             self.progress_bar['value'] = 0
-
+ 
     def export_3d(self):
         selected_types = self.get_selected_types()
         if not selected_types:
@@ -476,9 +509,15 @@ class GCodeToDXFApp:
         self.root.update()
         self.progress_bar['value'] = 0
         
+        try:
+            resolution = int(self.resolution_var.get())
+        except ValueError:
+            resolution = 8
+            
         success, res = export_3d_model(
             self.layers, filepath, selected_types, 
             self.nozzle_var.get(), self.layer_height_var.get(), 
+            resolution=resolution,
             progress_callback=self.update_progress
         )
         self.progress_bar['value'] = 0
